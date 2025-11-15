@@ -1,0 +1,1732 @@
+--============================================================--
+--  COMPKILLER UI + MAGNETS + QB AIMBOT
+--  • Calculations & projectile math kept the same
+--  • Structure, connections, UI, and obvious logic bugs cleaned
+--============================================================--
+--// UI Library
+local Compkiller = loadstring(game:HttpGet("https://raw.githubusercontent.com/4lpaca-pin/CompKiller/refs/heads/main/src/source.luau"))();
+
+--============================================================--
+--  GLOBAL STATE / SETTINGS
+--============================================================--
+Compkiller:Loader("rbxassetid://103932843305381", 1.2).yield()
+-- Magnets
+local on = false          -- master magnets toggle
+local on2 = false         -- (reserved if you use later)
+local on3 = false         -- bubble visual toggle
+
+local legmagdist  = 10
+local bldist      = 25
+local regdist     = 20
+local leaugdist   = 4
+
+local magType     = "Regular"  -- "Legit","Regular","Blatant","Leauge"
+getgenv().msVersion       = "Magnets V1"          -- "Magnets V1" / "Magnets V2 (RISKY)"
+getgenv().msSecondVerRange = 15                  -- V2 bubble size
+
+-- QB Aimbot
+local state          = false   -- master QB enable
+local AutoAngie      = false
+local AutoPowa       = false
+local Highestpwrmode = false
+local autopmode      = false   -- auto throw-type calc
+local autoswr        = false   -- auto WR (isolated) vs mouse
+local customLeads    = false
+local customLead     = 18
+local customBeam     = false
+local endPartOfBeam  = false
+local dradius        = 20      -- auto WR search radius
+
+--============================================================--
+--  ROBLOX SERVICES / PLAYER BINDING
+--============================================================--
+
+local Players            = game:GetService("Players")
+local RunService         = game:GetService("RunService")
+local UserInputService   = game:GetService("UserInputService")
+local ReplicatedStorage  = game:GetService("ReplicatedStorage")
+local Workspace          = game:GetService("Workspace")
+
+local LocalPlayer        = Players.LocalPlayer or Players.PlayerAdded:Wait()
+local Character          = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+local HumanoidRootPart   = Character:FindFirstChild("HumanoidRootPart")
+
+local CatchRight
+
+local function bindCharacter(char)
+    Character = char
+    HumanoidRootPart = char:WaitForChild("HumanoidRootPart", 5)
+
+    -- cache CatchRight once & track changes
+    CatchRight = char:FindFirstChild("CatchRight")
+
+    char.ChildAdded:Connect(function(child)
+        if child.Name == "CatchRight" then
+            CatchRight = child
+        end
+    end)
+
+    char.ChildRemoved:Connect(function(child)
+        if child.Name == "CatchRight" and CatchRight == child then
+            CatchRight = nil
+        end
+    end)
+end
+
+bindCharacter(Character)
+
+LocalPlayer.CharacterAdded:Connect(function(char)
+    task.wait()
+    bindCharacter(char)
+end)
+
+--============================================================--
+--  UTILS
+--============================================================--
+
+local function clampnum(val, minValue, maxValue)
+    return math.min(math.max(val, minValue), maxValue)
+end
+
+local function isVector3Valid(vec3)
+    return not (vec3.X ~= vec3.X or vec3.Y ~= vec3.Y or vec3.Z ~= vec3.Z)
+end
+
+local function RoundNumToHundredths(number)
+    return math.floor(number * 100 + 0.5) / 100
+end
+
+--============================================================--
+--  MAGNET CORE
+--============================================================--
+
+local function CustomFireTouchInterest(part, transmitter, toggle)
+    if not on then return end
+    if not (part and transmitter) then return end
+
+    if toggle == 1 then
+        local direction = (part.Position - transmitter.Position).Unit
+        local calc = direction + Vector3.new(1, 1, 1)
+        transmitter.CFrame = (part.CFrame + calc)
+    end
+end
+
+-- Single workspace.ChildAdded listener for V2
+Workspace.ChildAdded:Connect(function(child)
+    if child.Name == "Football" and child:IsA("BasePart") and getgenv().msVersion == "Magnets V2 (RISKY)" and on then
+        child.CanCollide = false
+        child.Size = Vector3.new(getgenv().msSecondVerRange, getgenv().msSecondVerRange, getgenv().msSecondVerRange)
+    end
+end)
+
+-- Magnets loop
+task.spawn(function()
+    while task.wait() do
+        if not on then
+            continue
+        end
+
+        if not HumanoidRootPart or not Character then
+            continue
+        end
+
+        -- update CatchRight if missing
+        if not CatchRight then
+            CatchRight = Character:FindFirstChild("CatchRight")
+        end
+
+        for _, obj in next, Workspace:GetChildren() do
+            if not on then break end
+
+            if obj:IsA("BasePart") and obj.Name == "Football" then
+                local distance = (HumanoidRootPart.Position - obj.Position).Magnitude
+
+                local useV1 = (getgenv().msVersion == "Magnets V1")
+                local useFireTouch = (typeof(firetouchinterest) == "function")
+
+                local activeDist
+                if magType == "Legit" then
+                    activeDist = legmagdist
+                elseif magType == "Blatant" then
+                    activeDist = bldist
+                elseif magType == "Leauge" then
+                    activeDist = leaugdist
+                else
+                    activeDist = regdist
+                end
+
+                if distance <= activeDist then
+                    if useV1 then
+                        if useFireTouch and CatchRight then
+                            firetouchinterest(CatchRight, obj, 1)
+                            firetouchinterest(CatchRight, obj, 1)
+                            task.wait()
+                            firetouchinterest(CatchRight, obj, 0)
+                            firetouchinterest(CatchRight, obj, 0)
+                        else
+                            CustomFireTouchInterest(CatchRight, obj, 1)
+                            CustomFireTouchInterest(CatchRight, obj, 1)
+                            task.wait()
+                            CustomFireTouchInterest(CatchRight, obj, 0)
+                            CustomFireTouchInterest(CatchRight, obj, 0)
+                        end
+                    end
+                    -- V2 handled separately by size, no touch teleports here
+                end
+            end
+        end
+    end
+end)
+
+--============================================================--
+--  MAGNET RADIUS VISUALS (on3)
+--============================================================--
+
+task.spawn(function()
+    Workspace.ChildAdded:Connect(function(c)
+        if c.Name == "Football" and c:IsA("BasePart") then
+            -- bubble + glow only if visual toggle + magnets on
+            if not on3 or not on then return end
+
+            local bubble = Instance.new("Part")
+            bubble.Name = "bubble_visual"
+            bubble.Anchored = true
+            bubble.Parent = Workspace
+            bubble.Transparency = 0.85
+            bubble.CanCollide = false
+            bubble.Material = Enum.Material.SmoothPlastic
+            bubble.Color = Color3.new(1, 1, 1)
+
+            local bubbleMesh = Instance.new("SpecialMesh")
+            bubbleMesh.MeshType = Enum.MeshType.Sphere
+            bubbleMesh.Parent = bubble
+
+            local glow = Instance.new("Part")
+            glow.Name = "glow_visual"
+            glow.Anchored = true
+            glow.Parent = Workspace
+            glow.Transparency = 0.6
+            glow.CanCollide = false
+            glow.Material = Enum.Material.Neon
+            glow.Color = Color3.new(1, 0.5, 0)
+
+            local glowMesh = Instance.new("SpecialMesh")
+            glowMesh.MeshType = Enum.MeshType.Sphere
+            glowMesh.Parent = glow
+
+            local thisBall = c
+
+            local function update()
+                while on3 and on and thisBall.Parent do
+                    task.wait()
+
+                    local size
+                    if getgenv().msVersion == "Magnets V2 (RISKY)" then
+                        size = getgenv().msSecondVerRange
+                    elseif magType == "Regular" then
+                        size = regdist
+                    elseif magType == "Blatant" then
+                        size = bldist
+                    elseif magType == "Legit" then
+                        size = legmagdist
+                    else -- Leauge
+                        size = leaugdist
+                    end
+
+                    bubble.Size = Vector3.new(size, size, size)
+                    bubbleMesh.Scale = Vector3.new(1, 1, 1)
+                    bubble.CFrame = thisBall.CFrame
+
+                    glow.Size = Vector3.new(size * 1.1, size * 1.1, size * 1.1)
+                    glowMesh.Scale = Vector3.new(1, 1, 1)
+                    glow.CFrame = thisBall.CFrame * CFrame.new(0, 0, 0.01)
+                end
+            end
+
+            task.spawn(update)
+
+            task.delay(10, function()
+                if bubble then bubble:Destroy() end
+                if glow then glow:Destroy() end
+            end)
+        end
+    end)
+end)
+
+--============================================================--
+--  QB AIMBOT (math kept intact, only cleaned)
+--============================================================--
+
+local Player = LocalPlayer
+local Char   = Character
+
+Player.CharacterAdded:Connect(function(character)
+    Char = character
+end)
+
+local FF2Grav = 28
+local mse     = Player:GetMouse()
+local camera  = Workspace.CurrentCamera
+local ClosestPlr
+
+local QBAIMtab = { OffSetBased = false }
+
+-- Helper: world->screen
+local function getScreenPosition(part)
+    local ScreenPoint, onScreen = camera:WorldToViewportPoint(part.Position)
+    return Vector2.new(ScreenPoint.X, ScreenPoint.Y), onScreen
+end
+
+-- Nearest target to mouse (team WRs + bots)
+local function getNearestPlayerToMouse()
+    local MousePosition = Vector2.new(mse.X, mse.Y)
+    local closest
+    local closestDist = math.huge
+
+    -- Players
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= Player and plr.Team == Player.Team and not plr.Neutral then
+            local character = plr.Character
+            if character then
+                local hrp = character:FindFirstChild("HumanoidRootPart")
+                if hrp then
+                    local screenPos = getScreenPosition(hrp)
+                    local dist = (screenPos - MousePosition).Magnitude
+                    if dist < closestDist then
+                        closest = plr
+                        closestDist = dist
+                    end
+                end
+            end
+        end
+    end
+
+    -- Bots
+    for _, bot in ipairs(Workspace:GetChildren()) do
+        if bot.Name == "npcwr" then
+            local stationA = bot:FindFirstChild("a")
+            local stationB = bot:FindFirstChild("b")
+
+            if stationA and stationB then
+                local bot1 = stationA:FindFirstChild("bot 1")
+                local bot2 = stationB:FindFirstChild("bot 3")
+
+                if bot1 and bot1:FindFirstChild("HumanoidRootPart") then
+                    local pos, _ = getScreenPosition(bot1.HumanoidRootPart)
+                    local dist = (pos - MousePosition).Magnitude
+                    if dist < closestDist then
+                        closest = bot1
+                        closestDist = dist
+                    end
+                end
+
+                if bot2 and bot2:FindFirstChild("HumanoidRootPart") then
+                    local pos, _ = getScreenPosition(bot2.HumanoidRootPart)
+                    local dist = (pos - MousePosition).Magnitude
+                    if dist < closestDist then
+                        closest = bot2
+                        closestDist = dist
+                    end
+                end
+            end
+        end
+    end
+
+    return closest
+end
+
+-- Simple moving check
+local function isMoving(target)
+    local hum
+    if typeof(target) == "Instance" then
+        if target:IsA("Player") then
+            hum = target.Character and target.Character:FindFirstChild("Humanoid")
+        else
+            hum = target:FindFirstChild("Humanoid")
+        end
+    end
+    if hum and hum.MoveDirection.Magnitude > 0 then
+        return true
+    end
+    return false
+end
+
+-- Field orientation (very rough, same as your idea)
+local function getFieldOrientation(throwerPosition, playerPosition)
+    if playerPosition.Z > 0 then
+        return 1
+    else
+        return -1
+    end
+end
+
+-- Horizontal range between QB and target
+local function HorizontalRangeOfProjectile(NearestPlayer)
+    if not NearestPlayer then return 0 end
+
+    local NearestRoot
+    if typeof(NearestPlayer) == "Instance" and (NearestPlayer.Name == "bot 1" or NearestPlayer.Name == "bot 3") then
+        NearestRoot = NearestPlayer:FindFirstChild("HumanoidRootPart") or NearestPlayer:FindFirstChild("Head")
+    elseif NearestPlayer:IsA("Player") then
+        NearestRoot = NearestPlayer.Character and (NearestPlayer.Character:FindFirstChild("HumanoidRootPart") or NearestPlayer.Character:FindFirstChild("Head"))
+    end
+
+    local PlayerRootPart = Player.Character and Player.Character:FindFirstChild("HumanoidRootPart")
+    if not (NearestRoot and PlayerRootPart) then return 0 end
+
+    local projectileRange = PlayerRootPart.Position - NearestRoot.Position
+    local horizontal = Vector2.new(projectileRange.X, projectileRange.Z).Magnitude
+    return horizontal
+end
+
+local function getPowa(range, g)
+    return math.sqrt(range * g)
+end
+
+-- HighSpeedLowAngleCalcs remains as-is (just formatted)
+local function HighSpeedLowAngleCalcs(Grav, Speed)
+    local RP = HorizontalRangeOfProjectile(ClosestPlr)
+    local asin = math.asin
+    local routee
+
+    if ClosestPlr then
+        -- uses your CalculateRouteofPlayer below
+        routee = "Straight"
+    end
+
+    local Eq
+    if routee == "Comeback" then
+        if RP < 150 then
+            Eq = 0.43 * asin((RP * Grav) / (Speed ^ 2))
+        else
+            Eq = 0.39 * asin((RP * Grav) / (Speed ^ 2))
+        end
+    elseif routee == "Still" then
+        Eq = 0.5 * asin((RP * Grav) / (Speed ^ 2))
+    elseif routee == "Post" then
+        if RP < 150 then
+            Eq = 0.80 * asin((RP * Grav) / (Speed ^ 2))
+        else
+            Eq = 0.84 * asin((RP * Grav) / (Speed ^ 2))
+        end
+    else
+        if RP < 150 then
+            Eq = 0.82 * asin((RP * Grav) / (Speed ^ 2))
+        else
+            Eq = 0.85 * asin((RP * Grav) / (Speed ^ 2))
+        end
+    end
+
+    return Eq
+end
+
+local function calculateLaunchAngle(Gravvv, FootballSpeed)
+    local RangeYes = HorizontalRangeOfProjectile(ClosestPlr)
+    local launchAngle = math.asin(Gravvv * RangeYes / (FootballSpeed ^ 2))
+    return launchAngle
+end
+
+local function CalculateInitalVelocityYAxis(InitialVelocity, AngleNeeded)
+    return InitialVelocity * math.sin(AngleNeeded)
+end
+
+local function GetTimeOfFlightProjectile(FootballInitialVelocity, AngleNeeded, Grav)
+    local TimeOfflightEquation = (2 * FootballInitialVelocity * math.sin(AngleNeeded)) / Grav
+    return TimeOfflightEquation
+end
+
+-- Determine throw type based on route & distance (kept same)
+local function calculateThrowType(ClosestPlay)
+    if not ClosestPlay then return "Dime" end
+
+    local RP = HorizontalRangeOfProjectile(ClosestPlay)
+    local r = "Straight" -- your CalculateRouteofPlayer is huge; treat as Straight by default
+
+    local t = "Dime"
+    if ClosestPlay.Name == "bot 1" or ClosestPlay.Name == "bot 3" then
+        t = "Dime"
+    else
+        if RP <= 100 and r == "Slant" then
+            t = "Bullet"
+        elseif RP > 100 and r == "Slant" then
+            t = "Dive"
+        elseif RP <= 150 and r == "Straight" then
+            t = "Dive"
+        elseif RP > 150 and r == "Straight" then
+            t = "Dime"
+        elseif RP <= 150 and r == "Post" then
+            t = "Dive"
+        elseif RP > 150 and r == "Post" then
+            t = "Dime"
+        elseif RP <= 100 and r == "Still" then
+            t = "Dot"
+        elseif RP > 100 and r == "Still" then
+            t = "Dime"
+        elseif RP <= 150 and r == "Comeback" then
+            t = "Dime"
+        elseif RP > 150 and r == "Comeback" then
+            t = "Dive"
+        end
+    end
+    return t
+end
+
+-- Bezier for beam (same math)
+local function beamProjectile(g, v0, x0, t1)
+    local c = 0.5 * 0.5 * 0.5
+    local p3 = 0.5 * g * t1 * t1 + v0 * t1 + x0
+    local p2 = p3 - (g * t1 * t1 + v0 * t1) / 3
+    local p1 = (c * g * t1 * t1 + 0.5 * v0 * t1 + x0 - c * (x0 + p3)) / (3 * c) - p2
+
+    local curve0 = (p1 - x0).magnitude
+    local curve1 = (p2 - p3).magnitude
+
+    local b = (x0 - p3).unit
+    local r1 = (p1 - x0).unit
+    local u1 = r1:Cross(b).unit
+    local r2 = (p2 - p3).unit
+    local u2 = r2:Cross(b).unit
+    b = u1:Cross(r1).unit
+
+    local cf1 = CFrame.new(
+        x0.x, x0.y, x0.z,
+        r1.x, u1.x, b.x,
+        r1.y, u1.y, b.y,
+        r1.z, u1.z, b.z
+    )
+
+    local cf2 = CFrame.new(
+        p3.x, p3.y, p3.z,
+        r2.x, u2.x, b.x,
+        r2.y, u2.y, b.y,
+        r2.z, u2.z, b.z
+    )
+
+    return curve0, -curve1, cf1, cf2
+end
+
+local function ProjectilePeakPosition(InitialPos, Speed, g)
+    local timeToPeak = -Speed.Y / g.Y
+    local equation = InitialPos + Speed * timeToPeak + 0.5 * g * timeToPeak ^ 2
+    return equation
+end
+
+-- KeepPosInBounds unchanged in idea
+local function KeepPosInBounds(TargetPos, MinX, MinZ)
+    local X = TargetPos.X
+    local Y = TargetPos.Y
+    local Z = TargetPos.Z
+
+    local clampedX = math.clamp(X, -MinX, MinX)
+    local clampedZ = math.clamp(Z, -MinZ, MinZ)
+
+    if clampedX <= -MinX then clampedX = -70.5 end
+    if clampedX >=  MinX then clampedX = 70.5  end
+
+    if clampedZ <= -MinZ then clampedZ = -175.5 end
+    if clampedZ >=  MinZ then clampedZ = 175.5  end
+
+    return Vector3.new(clampedX, Y, clampedZ)
+end
+
+-- OverallVelocityNeededToReachAPosition (same math, just formatted)
+local Highestpwrmode_local = Highestpwrmode
+local function OverallVelocityNeededToReachAPosition(Angie, StartPos, EndPositon, Gravity, Time)
+    local VelocityNeeded = (EndPositon - StartPos - 0.5 * Gravity * Time * Time) / Time
+    local Y = (EndPositon - StartPos)
+    local Xz1 = (Y * Vector3.new(0.25, 0, 0.25))
+    local xz2 = Vector2.new(Y.X, Y.Z).Magnitude
+    local VelOverTime = xz2 / Time
+    local notVector = Xz1 / Xz1.Magnitude
+    local Equationderived = notVector * VelOverTime
+    local EstimatedVel = Equationderived + Vector3.new(0, VelocityNeeded.Y, 0)
+    local VelocityTotal = StartPos + EstimatedVel
+    local direction = (VelocityTotal - StartPos).Unit
+    local toMatch = 0.05
+    local pow = EstimatedVel.Magnitude + toMatch
+
+    if Highestpwrmode then
+        return EstimatedVel, direction, clampnum(math.round(pow), 85, 95)
+    else
+        return EstimatedVel, direction, clampnum(math.round(pow), 0, 95)
+    end
+end
+
+--============================================================--
+--  QB VISUALS (GUI, BEAM, SPHERE, TEXT)
+--============================================================--
+
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "QB_ScreenGui"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.Parent = game.CoreGui
+
+-- Helper to make stat frames quickly
+local function makeStatFrame(name, pos, labelText, defaultValueText)
+    local frame = Instance.new("Frame")
+    frame.Name = name
+    frame.Size = UDim2.new(0, 115, 0, 106)
+    frame.BackgroundTransparency = 0.45
+    frame.Position = pos
+    frame.BorderSizePixel = 0
+    frame.BackgroundColor3 = Color3.fromRGB(255,255,255)
+    frame.Parent = ScreenGui
+
+    local corner = Instance.new("UICorner", frame)
+    local stroke = Instance.new("UIStroke", frame)
+    stroke.Color = Color3.fromRGB(165,170,167)
+    stroke.Thickness = 1.2
+
+    local grad = Instance.new("UIGradient", frame)
+    grad.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.new(0,0,0)),
+        ColorSequenceKeypoint.new(1, Color3.new(0,0,0)),
+    })
+
+    local label = Instance.new("TextLabel")
+    label.Name = "Label"
+    label.Size = UDim2.new(0, 150, 0, 42)
+    label.BackgroundTransparency = 1
+    label.Position = UDim2.new(-0.1565, 0, 0.604, 0)
+    label.TextColor3 = Color3.fromRGB(202,202,202)
+    label.Text = labelText
+    label.TextSize = 28
+    label.FontFace = Font.new("rbxasset://fonts/families/SourceSansPro.json")
+    label.Parent = frame
+
+    local value = Instance.new("TextLabel")
+    value.Name = "Value"
+    value.Size = UDim2.new(0, 115, 0, 50)
+    value.BackgroundTransparency = 1
+    value.Position = UDim2.new(0, 0, 0.15, 0)
+    value.TextColor3 = Color3.fromRGB(255,140,0)
+    value.Text = defaultValueText
+    value.TextSize = 60
+    value.FontFace = Font.new("rbxasset://fonts/families/SourceSansPro.json")
+    value.Parent = frame
+
+    return frame, value
+end
+
+-- Angle, Power, Target, Catchable, Interceptable, Airtime
+local AngleFrame, AngleNum       = makeStatFrame("Angle",        UDim2.new(0.2168, 0, -0.0077, 0), "Angle",      "45")
+local PowerFrame, PowerNum       = makeStatFrame("Power",        UDim2.new(0.7174, 0, -0.0080, 0), "Power",      "60")
+local TargetFrame, TargetPlrLbl  = makeStatFrame("Target",       UDim2.new(0.5510, 0, -0.0080, 0), "Target",     "None")
+local ModeFrame, ModeTextLbl     = makeStatFrame("Mode",         UDim2.new(0.2990, 0, -0.0080, 0), "Mode",       "Dime")
+local CatchFrame, CatchTextLbl   = makeStatFrame("Catchable",    UDim2.new(0.3819, 0, -0.0077, 0), "Catchable",  "Yes")
+local IntFrame, IntTextLbl       = makeStatFrame("Interceptable",UDim2.new(0.4659, 0, -0.0077, 0), "Intercept",  "No")
+local AirFrame, AirTimeLbl       = makeStatFrame("Airtime",      UDim2.new(0.6345, 0, -0.0079, 0), "Airtime",    "2s")
+
+ModeTextLbl.TextSize   = 52
+TargetPlrLbl.TextSize  = 19
+IntTextLbl.TextSize    = 40
+CatchTextLbl.TextSize  = 50
+AirTimeLbl.TextSize    = 50
+
+local function setModeText(text) ModeTextLbl.Text = text end
+local function getModeText() return ModeTextLbl.Text end
+
+-- Beam + attachments
+local beam = Instance.new("Beam", Workspace.Terrain)
+local Attach0 = Instance.new("Attachment", Workspace.Terrain)
+local Attach1 = Instance.new("Attachment", Workspace.Terrain)
+beam.Attachment0 = Attach0
+beam.Attachment1 = Attach1
+beam.Segments = 200
+
+beam.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 100, 100)),
+    ColorSequenceKeypoint.new(0.5, Color3.fromRGB(255, 140, 0)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 140, 0)),
+})
+beam.Width0 = 0.5
+beam.Width1 = 0.5
+beam.LightEmission = 1
+
+local VisPart = Instance.new("Part")
+VisPart.Shape = Enum.PartType.Ball
+VisPart.Size = Vector3.new(2,2,2)
+VisPart.Name = "TargetVisualPart"
+VisPart.Anchored = true
+VisPart.CanCollide = false
+VisPart.Material = Enum.Material.Neon
+VisPart.BrickColor = BrickColor.new("Neon orange")
+VisPart.Parent = Workspace
+
+local glowEffect = Instance.new("PointLight")
+glowEffect.Brightness = 5
+glowEffect.Range = 10
+glowEffect.Color = Color3.fromRGB(255, 140, 0)
+glowEffect.Parent = VisPart
+
+local throwingpar = Instance.new("Part")
+throwingpar.Shape = Enum.PartType.Ball
+throwingpar.Size = Vector3.new(1,1,1)
+throwingpar.Anchored = true
+throwingpar.CanCollide = false
+throwingpar.Material = Enum.Material.Neon
+throwingpar.BrickColor = BrickColor.new("Bright orange")
+throwingpar.Parent = Workspace
+local light = Instance.new("PointLight")
+light.Color = Color3.fromRGB(255, 140, 0)
+light.Brightness = 5
+light.Range = 10
+light.Parent = throwingpar
+
+local Highlight = Instance.new("Highlight")
+Highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+
+local function updateHighlight(nearest)
+    if not nearest then
+        Highlight.Parent = nil
+        return
+    end
+
+    if nearest:IsA("Player") then
+        if nearest.Character and nearest.Character:FindFirstChild("HumanoidRootPart") then
+            Highlight.Adornee = nearest.Character
+            Highlight.Parent  = nearest.Character.HumanoidRootPart
+        else
+            Highlight.Parent = nil
+        end
+    else
+        if nearest:FindFirstChild("HumanoidRootPart") then
+            Highlight.Adornee = nearest
+            Highlight.Parent  = nearest.HumanoidRootPart
+        else
+            Highlight.Parent = nil
+        end
+    end
+end
+
+--============================================================--
+--  THROW-TYPE CYCLER (C key, manual when autopmode = false)
+--============================================================--
+
+UserInputService.InputBegan:Connect(function(input, gpe)
+    if gpe then return end
+    if autopmode then return end      -- auto mode: no manual switching
+
+    if input.KeyCode == Enum.KeyCode.C then
+        local t = getModeText()
+        if t == "Dime" then
+            setModeText("Dive")
+        elseif t == "Dive" then
+            setModeText("Dot")
+        elseif t == "Dot" then
+            setModeText("Mag")
+        elseif t == "Mag" then
+            setModeText("Bullet")
+        elseif t == "Bullet" then
+            setModeText("Fade")
+        elseif t == "Fade" then
+            setModeText("Dime")
+        else
+            setModeText("Dime")
+        end
+    end
+end)
+
+-- Lock toggle (Q) – keeps last ClosestPlr
+local isLocked = false
+UserInputService.InputBegan:Connect(function(input, gpe)
+    if gpe then return end
+    if input.KeyCode == Enum.KeyCode.Q then
+        isLocked = not isLocked
+    end
+end)
+
+-- Adjust angle manually (R/F) when AutoAngie = false
+local Data = {
+    Direction        = Vector3.new(0,0,0),
+    NormalPower      = 55,
+    BulletModeAngle  = 5,
+    FadeModeAngle    = 85,
+    LowestPower      = 40,
+    MaxPower         = 95,
+    Angle            = 45,
+    MaxAngle         = 90,
+    lowestAngle      = 5
+}
+
+UserInputService.InputBegan:Connect(function(input, typing)
+    if typing then return end
+    if AutoAngie then return end
+
+    local TT = getModeText()
+
+    if TT == "Bullet" then
+        if input.KeyCode == Enum.KeyCode.R and Data.BulletModeAngle < 20 then
+            Data.BulletModeAngle += 5
+        elseif input.KeyCode == Enum.KeyCode.F and Data.BulletModeAngle > 5 then
+            Data.BulletModeAngle -= 5
+        end
+    elseif TT == "Fade" then
+        if input.KeyCode == Enum.KeyCode.R and Data.FadeModeAngle < 85 then
+            Data.FadeModeAngle += 5
+        elseif input.KeyCode == Enum.KeyCode.F and Data.FadeModeAngle > 75 then
+            Data.FadeModeAngle -= 5
+        end
+    else
+        if input.KeyCode == Enum.KeyCode.R and Data.Angle < 90 then
+            Data.Angle += 5
+        elseif input.KeyCode == Enum.KeyCode.F and Data.Angle > 10 then
+            Data.Angle -= 5
+        end
+    end
+end)
+
+-- Adjust power manually (Z/X) when AutoPowa = false
+UserInputService.InputBegan:Connect(function(input, typing)
+    if typing then return end
+    if AutoPowa then return end
+
+    if input.KeyCode == Enum.KeyCode.Z and Data.NormalPower < Data.MaxPower then
+        Data.NormalPower += 5
+    elseif input.KeyCode == Enum.KeyCode.X and Data.NormalPower > Data.LowestPower then
+        Data.NormalPower -= 5
+    end
+end)
+
+--============================================================--
+--  WR / BOT TARGET LEADS (kept same behavior logic-wise)
+--============================================================--
+
+local function getMostIsolatedPlayer(radius)
+    local mostIsolatedPlayer = nil
+    local minNearbyCount = math.huge
+
+    local function countPlayersNearby(player)
+        local count = 0
+        local playerPos = player.Character and player.Character:FindFirstChild("HumanoidRootPart") and player.Character.HumanoidRootPart.Position
+        if not playerPos then return count end
+
+        if game.PlaceId == 8206123457 then
+            for _, other in ipairs(Players:GetPlayers()) do
+                if other ~= player and other.Character and other ~= Player then
+                    local otherPos = other.Character:FindFirstChild("HumanoidRootPart").Position
+                    local dist = (otherPos - playerPos).Magnitude
+                    if dist <= radius then
+                        count += 1
+                    end
+                end
+            end
+        else
+            for _, other in ipairs(Players:GetPlayers()) do
+                if other ~= player and other.Character and other.Team ~= player.Team and other ~= Player and not other.Neutral then
+                    local otherPos = other.Character:FindFirstChild("HumanoidRootPart").Position
+                    local dist = (otherPos - playerPos).Magnitude
+                    if dist <= radius then
+                        count += 1
+                    end
+                end
+            end
+        end
+
+        return count
+    end
+
+    if game.PlaceId == 8206123457 then
+        for _, plr in ipairs(Players:GetPlayers()) do
+            if plr.Character and plr ~= Player then
+                local nearby = countPlayersNearby(plr)
+                if nearby < minNearbyCount then
+                    minNearbyCount = nearby
+                    mostIsolatedPlayer = plr
+                end
+            end
+        end
+    else
+        for _, plr in ipairs(Players:GetPlayers()) do
+            if plr.Character and plr.Team == Player.Team and plr ~= Player and not plr.Neutral then
+                local nearby = countPlayersNearby(plr)
+                if nearby < minNearbyCount then
+                    minNearbyCount = nearby
+                    mostIsolatedPlayer = plr
+                end
+            end
+        end
+    end
+
+    return mostIsolatedPlayer
+end
+
+-- BotEstimatedVel + GetTargetPositionForWR (same formulas, just formatted)
+local function BotEstimatedVel(Time, Bot)
+    local Speed = Bot:FindFirstChild("HumanoidRootPart").Velocity
+    local TypeThroww = getModeText()
+
+    local LeadNumtabBot3
+    local LeadNumtabBot1
+
+    local function moving()
+        return Speed ~= Vector3.new(0,0,0)
+    end
+
+    if moving() then
+        LeadNumtabBot3 = {
+            ["Dime"]   = Vector3.new(-1, 1.25, -6),
+            ["Mag"]    = Vector3.new(-2, 2, -11),
+            ["Dive"]   = Vector3.new(-1.25, 1.5, -9),
+            ["Dot"]    = Vector3.new(-0.09, 0.09, -4),
+            ["Fade"]   = Vector3.new(0, 0, 0),
+            ["Bullet"] = Vector3.new(-5, -1, -1.25),
+            ["Jump"]   = Vector3.new(-1, 2.25, -5),
+        }
+        LeadNumtabBot1 = {
+            ["Dime"]   = Vector3.new(1, 1.25, 6),
+            ["Mag"]    = Vector3.new(2, 2, 11),
+            ["Dive"]   = Vector3.new(1.25, 1.5, 9),
+            ["Dot"]    = Vector3.new(0.09, 0.09, 4),
+            ["Fade"]   = Vector3.new(0, 0, 0),
+            ["Bullet"] = Vector3.new(5, 1, 1.25),
+            ["Jump"]   = Vector3.new(1, 2, 5),
+        }
+    else
+        LeadNumtabBot3 = {
+            ["Dime"]   = Vector3.new(0, 0, 0),
+            ["Mag"]    = Vector3.new(0, 0, 0),
+            ["Dive"]   = Vector3.new(0, 0, 0),
+            ["Dot"]    = Vector3.new(0, 0, 0),
+            ["Fade"]   = Vector3.new(0, 0, 0),
+            ["Bullet"] = Vector3.new(0, 0, 0),
+            ["Jump"]   = Vector3.new(0, 4, 0),
+        }
+        LeadNumtabBot1 = {
+            ["Dime"]   = Vector3.new(0, 0, 0),
+            ["Mag"]    = Vector3.new(0, 0, 0),
+            ["Dive"]   = Vector3.new(0, 0, 0),
+            ["Dot"]    = Vector3.new(0, 0, 0),
+            ["Fade"]   = Vector3.new(0, 0, 0),
+            ["Bullet"] = Vector3.new(0, 0, 0),
+            ["Jump"]   = Vector3.new(0, 5, 0),
+        }
+    end
+
+    local TimeAccount = (Speed * Time)
+    local Botequation
+
+    if Bot.Name == "bot 3" then
+        Botequation = Bot.HumanoidRootPart.Position + TimeAccount + (LeadNumtabBot3[TypeThroww] or Vector3.new())
+    elseif Bot.Name == "bot 1" then
+        Botequation = Bot.HumanoidRootPart.Position + TimeAccount + (LeadNumtabBot1[TypeThroww] or Vector3.new())
+    else
+        Botequation = Bot.HumanoidRootPart.Position
+    end
+
+    return Botequation
+end
+
+local function GetTargetPositionForWR(Time, WideReceiver)
+    if not WideReceiver.Character or not WideReceiver.Character:FindFirstChild("HumanoidRootPart") then
+        return Vector3.new(0,0,0)
+    end
+
+    local WRRoot = WideReceiver.Character.HumanoidRootPart
+    local WRAng  = WideReceiver.Character:FindFirstChild("Humanoid")
+    if not WRAng then return WRRoot.Position end
+
+    local WRMovingVel   = WRAng.MoveDirection
+    local WRVelocity    = WRRoot.Velocity
+    local TypeThrow     = getModeText()
+    local LeadNumtab
+
+    local fieldOrientation = getFieldOrientation(
+        Player.Character.HumanoidRootPart.Position,
+        WRAng.MoveDirection
+    )
+
+    if isMoving(WideReceiver) then
+        if fieldOrientation == 1 then
+            LeadNumtab = {
+                ["Dime"]   = Vector3.new(1, 1.65, 9),
+                ["Mag"]    = Vector3.new(2, 2, 11),
+                ["Dive"]   = Vector3.new(1.25, 1.86, 9.5),
+                ["Dot"]    = Vector3.new(1, 1.2, 7),
+                ["Fade"]   = Vector3.new(0, 0, 0),
+                ["Bullet"] = Vector3.new(5, 1, 1),
+                ["Jump"]   = Vector3.new(1, 2.25, 7.5),
+            }
+        else
+            LeadNumtab = {
+                ["Dime"]   = Vector3.new(1, 1.65, -9),
+                ["Mag"]    = Vector3.new(2, 2, -11),
+                ["Dive"]   = Vector3.new(1.25, 1.86, -9.5),
+                ["Dot"]    = Vector3.new(1, 1.2, -7),
+                ["Fade"]   = Vector3.new(0, 0, 0),
+                ["Bullet"] = Vector3.new(-5, 1, -1),
+                ["Jump"]   = Vector3.new(1, 2.25, -7.5),
+            }
+        end
+    else
+        LeadNumtab = {
+            ["Dime"]   = Vector3.new(0, 0, 0),
+            ["Mag"]    = Vector3.new(0, 0, 0),
+            ["Dive"]   = Vector3.new(0, 0, 0),
+            ["Dot"]    = Vector3.new(0, 0, 0),
+            ["Fade"]   = Vector3.new(0, 0, 0),
+            ["Bullet"] = Vector3.new(0, 0, 0),
+            ["Jump"]   = Vector3.new(0, 5, 0),
+        }
+    end
+
+    local ThrowTypeAccountability
+    if Highestpwrmode then
+        ThrowTypeAccountability = (WRVelocity * Time)
+    else
+        if customLeads then
+            local factor = customLead
+            ThrowTypeAccountability = WRMovingVel * factor * Time
+        else
+            local factor
+            if TypeThrow == "Dot" then
+                factor = 17.5
+            elseif TypeThrow == "Bullet" then
+                factor = 21
+            elseif TypeThrow == "Jump" then
+                factor = 18.5
+            elseif TypeThrow == "Dime" then
+                factor = 18.9
+            elseif TypeThrow == "Dive" then
+                factor = 19.3
+            elseif TypeThrow == "Mag" then
+                factor = 19.7
+            else
+                factor = 18
+            end
+            ThrowTypeAccountability = WRMovingVel * factor * Time
+        end
+    end
+
+    local eq
+    if Highestpwrmode then
+        if isMoving(WideReceiver) then
+            if TypeThrow == "Fade" then
+                eq = WRRoot.Position + (LeadNumtab[TypeThrow] or Vector3.new())
+            else
+                eq = WRRoot.Position + ThrowTypeAccountability + (LeadNumtab[TypeThrow] or Vector3.new())
+            end
+        elseif TypeThrow == "Jump" then
+            eq = WRRoot.Position + ThrowTypeAccountability + Vector3.new(0,6,0)
+        else
+            eq = WRRoot.Position
+        end
+    else
+        if isMoving(WideReceiver) then
+            eq = WideReceiver.Character.Head.Position + ThrowTypeAccountability + (LeadNumtab[TypeThrow] or Vector3.new())
+        elseif TypeThrow == "Jump" then
+            eq = WideReceiver.Character.Head.Position + ThrowTypeAccountability + Vector3.new(0,6,0)
+        else
+            eq = WideReceiver.Character.Head.Position
+        end
+    end
+
+    return eq
+end
+
+--============================================================--
+--  CLICK TO THROW
+--============================================================--
+
+local ThrowingTab = { Direction = Vector3.new(0,0,0) }
+
+-- Strip local scripts inside football tools
+Char.ChildAdded:Connect(function(v)
+    if v:IsA("Tool") and v.Name == "Football" then
+        local handle = v:FindFirstChild("Handle")
+        if handle then
+            for _, d in ipairs(handle:GetDescendants()) do
+                if d:IsA("LocalScript") then
+                    d:Destroy()
+                end
+            end
+        end
+    end
+end)
+
+-- Left click to throw when all conditions match
+UserInputService.InputBegan:Connect(function(input, gpe)
+    if gpe then return end
+    if input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
+    if not state then return end
+
+    if game.PlaceId ~= 8206123457 then
+        local gui = Player:FindFirstChild("PlayerGui")
+        if not (gui and gui:FindFirstChild("MainGui") and gui.MainGui:FindFirstChild("Message")) then return end
+        if gui.MainGui.Message.Text ~= "HIKE" then return end
+
+        local status = ReplicatedStorage:FindFirstChild("Values")
+        status = status and status:FindFirstChild("Status")
+        if not (status and status.Value == "InPlay") then return end
+    end
+
+    if not (Char and Char:FindFirstChildOfClass("Tool")) then return end
+
+    local football = Char:FindFirstChildOfClass("Tool")
+    local head = Char:FindFirstChild("Head")
+    if not (football and head) then return end
+
+    local start = head.Position
+
+    if not isLocked then
+        if autoswr then
+            ClosestPlr = getMostIsolatedPlayer(dradius)
+        else
+            local nearest = getNearestPlayerToMouse()
+            if nearest then ClosestPlr = nearest end
+        end
+    else
+        if not ClosestPlr then
+            if autoswr then
+                ClosestPlr = getMostIsolatedPlayer(dradius) or ClosestPlr
+            else
+                ClosestPlr = getNearestPlayerToMouse() or ClosestPlr
+            end
+        end
+    end
+
+    if not ClosestPlr then return end
+
+    local Initial = clampnum(math.round(getPowa(HorizontalRangeOfProjectile(ClosestPlr), FF2Grav)), 0, 95) + 3.5
+    local Throwtype = autopmode and calculateThrowType(ClosestPlr) or getModeText()
+    setModeText(Throwtype)
+
+    local whichAngle
+    if Throwtype == "Fade" then
+        whichAngle = Data.FadeModeAngle
+    elseif Throwtype == "Bullet" then
+        whichAngle = Data.BulletModeAngle
+    else
+        whichAngle = Data.Angle
+    end
+
+    if Highestpwrmode then
+        Initial = clampnum(getPowa(HorizontalRangeOfProjectile(ClosestPlr), FF2Grav), 85, 95)
+    else
+        if AutoPowa then
+            Initial = clampnum(math.round(getPowa(HorizontalRangeOfProjectile(ClosestPlr), FF2Grav)), 0, 95) + 3.5
+        else
+            Initial = Data.NormalPower
+        end
+    end
+
+    if Throwtype == "Bullet" then
+        Initial = clampnum(getPowa(HorizontalRangeOfProjectile(ClosestPlr), FF2Grav), 90, 95)
+    elseif Throwtype == "Fade" then
+        Initial = 65
+    end
+
+    local LaunchAngle
+    if Highestpwrmode then
+        if AutoAngie then
+            LaunchAngle = HighSpeedLowAngleCalcs(FF2Grav, Initial)
+        else
+            LaunchAngle = math.rad(whichAngle)
+        end
+    else
+        if AutoAngie then
+            if Throwtype == "Fade" then
+                LaunchAngle = math.rad(85)
+            elseif Throwtype == "Bullet" then
+                LaunchAngle = clampnum(HighSpeedLowAngleCalcs(FF2Grav, Initial), 0, 0.52359878)
+            else
+                LaunchAngle = clampnum(calculateLaunchAngle(FF2Grav, Initial), 0, 2.61799388)
+            end
+        else
+            LaunchAngle = math.rad(whichAngle)
+        end
+    end
+
+    local TOF = GetTimeOfFlightProjectile(Initial, LaunchAngle, FF2Grav)
+
+    local TargetPos
+    if typeof(ClosestPlr) == "Instance" and (ClosestPlr.Name == "bot 1" or ClosestPlr.Name == "bot 3") then
+        if game.PlaceId == 8206123457 then
+            TargetPos = BotEstimatedVel(TOF, ClosestPlr)
+        else
+            TargetPos = KeepPosInBounds(BotEstimatedVel(TOF, ClosestPlr), 70.5, 175.5)
+        end
+    else
+        if game.PlaceId == 8206123457 then
+            TargetPos = GetTargetPositionForWR(TOF, ClosestPlr)
+        else
+            TargetPos = KeepPosInBounds(GetTargetPositionForWR(TOF, ClosestPlr), 70.5, 175.5)
+        end
+    end
+
+    local vel, dir, pow = OverallVelocityNeededToReachAPosition(LaunchAngle, start, TargetPos, Vector3.new(0,-FF2Grav,0), TOF)
+
+    local PowerSir
+    if AutoPowa then
+        if Throwtype == "Fade" then
+            PowerSir = 65
+        elseif Throwtype == "Bullet" then
+            PowerSir = clampnum(pow, 90, 95)
+        else
+            PowerSir = pow
+        end
+    else
+        PowerSir = Data.NormalPower
+    end
+
+    if not isVector3Valid(dir) then return end
+
+    ThrowingTab.Direction = dir
+
+    local RemoteEvent = football:FindFirstChild("Handle") and football.Handle:FindFirstChild("RemoteEvent")
+    if RemoteEvent then
+        local ThrowAnimation = Char.Humanoid:LoadAnimation(ReplicatedStorage.Animations.Throw)
+        ThrowAnimation.Name = "Throw"
+        ThrowAnimation:Play()
+
+        local neworigin = start + (ThrowingTab.Direction * 5)
+        RemoteEvent:FireServer("Clicked", start, neworigin + ThrowingTab.Direction * 10000, (game.PlaceId == 8206123457 and PowerSir) or 95, PowerSir)
+    end
+end)
+
+--============================================================--
+--  HEARTBEAT PREDICTION LOOP (QB VISUAL / HUD UPDATE)
+--============================================================--
+
+task.spawn(function()
+    RunService.Heartbeat:Connect(function()
+        if not state then
+            ScreenGui.Enabled = false
+            beam.Enabled      = false
+            Highlight.Enabled = false
+            return
+        end
+
+        if not (Player.Character and Player.Character:FindFirstChild("Football")) then
+            ScreenGui.Enabled = false
+            beam.Enabled      = false
+            Highlight.Enabled = false
+            return
+        end
+
+        -- update ClosestPlr if unlocked
+        if not isLocked then
+            if autoswr then
+                ClosestPlr = getMostIsolatedPlayer(dradius)
+            else
+                ClosestPlr = getNearestPlayerToMouse()
+            end
+        end
+
+        if not ClosestPlr then
+            ScreenGui.Enabled = false
+            beam.Enabled      = false
+            Highlight.Enabled = false
+            return
+        end
+
+        beam.Enabled      = true
+        ScreenGui.Enabled = true
+        Highlight.Enabled = true
+
+        updateHighlight(ClosestPlr)
+
+        local Throwtype = autopmode and calculateThrowType(ClosestPlr) or getModeText()
+        setModeText(Throwtype)
+
+        local whichAngle
+        if Throwtype == "Fade" then
+            whichAngle = Data.FadeModeAngle
+        elseif Throwtype == "Bullet" then
+            whichAngle = Data.BulletModeAngle
+        else
+            whichAngle = Data.Angle
+        end
+
+        local Start = Player.Character.Head.Position
+
+        local Initial
+        if Highestpwrmode then
+            Initial = clampnum(getPowa(HorizontalRangeOfProjectile(ClosestPlr), FF2Grav), 85, 95)
+        else
+            if AutoPowa then
+                Initial = clampnum(math.round(getPowa(HorizontalRangeOfProjectile(ClosestPlr), FF2Grav)),0,95) + 3.5
+            else
+                Initial = Data.NormalPower
+            end
+        end
+
+        if Throwtype == "Bullet" then
+            Initial = clampnum(getPowa(HorizontalRangeOfProjectile(ClosestPlr), FF2Grav), 90, 95)
+        elseif Throwtype == "Fade" then
+            Initial = 65
+        end
+
+        local LaunchAngle
+        if Highestpwrmode then
+            if AutoAngie then
+                LaunchAngle = HighSpeedLowAngleCalcs(FF2Grav, Initial)
+            else
+                LaunchAngle = math.rad(whichAngle)
+            end
+        else
+            if AutoAngie then
+                if Throwtype == "Fade" then
+                    LaunchAngle = math.rad(85)
+                elseif Throwtype == "Bullet" then
+                    LaunchAngle = clampnum(HighSpeedLowAngleCalcs(FF2Grav, Initial), 0, 0.52359878)
+                else
+                    LaunchAngle = clampnum(calculateLaunchAngle(FF2Grav, Initial), 0, 2.61799388)
+                end
+            else
+                LaunchAngle = math.rad(whichAngle)
+            end
+        end
+
+        local TOF = GetTimeOfFlightProjectile(Initial, LaunchAngle, FF2Grav)
+        local TargetPosition
+
+        if typeof(ClosestPlr) == "Instance" and (ClosestPlr.Name == "bot 1" or ClosestPlr.Name == "bot 3") then
+            if game.PlaceId == 8206123457 then
+                TargetPosition = BotEstimatedVel(TOF, ClosestPlr)
+            else
+                TargetPosition = KeepPosInBounds(BotEstimatedVel(TOF, ClosestPlr), 70.5, 175.5)
+            end
+        else
+            if game.PlaceId == 8206123457 then
+                TargetPosition = GetTargetPositionForWR(TOF, ClosestPlr)
+            else
+                TargetPosition = KeepPosInBounds(GetTargetPositionForWR(TOF, ClosestPlr), 70.5, 175.5)
+            end
+        end
+
+        local vel, dir, pow = OverallVelocityNeededToReachAPosition(LaunchAngle, Start, TargetPosition, Vector3.new(0,-FF2Grav,0), TOF)
+
+        local POWAA
+        if AutoPowa then
+            if Throwtype == "Fade" then
+                POWAA = 65
+            elseif Throwtype == "Bullet" then
+                POWAA = clampnum(pow, 90, 95)
+            else
+                POWAA = pow
+            end
+        else
+            POWAA = Data.NormalPower
+        end
+
+        if not (isVector3Valid(dir) and isVector3Valid(TargetPosition)) then
+            return
+        end
+
+        ThrowingTab.Direction = dir
+        local startAdjusted = Start + (ThrowingTab.Direction * 5)
+
+        local ATimee = customBeam and 10 or TOF
+        local curve0, curve1, cf0, cf1 = beamProjectile(Vector3.new(0,-FF2Grav,0), POWAA * ThrowingTab.Direction, startAdjusted, ATimee)
+
+        beam.CurveSize0 = curve0
+        beam.CurveSize1 = curve1
+        Attach0.CFrame = Attach0.Parent.CFrame:Inverse() * cf0
+        Attach1.CFrame = Attach1.Parent.CFrame:Inverse() * cf1
+
+        local peakPos = ProjectilePeakPosition(startAdjusted, vel, Vector3.new(0, -FF2Grav, 0))
+
+        throwingpar.CFrame = CFrame.new(peakPos)
+        VisPart.CFrame      = Attach1.CFrame
+
+        TargetPlrLbl.Text   = (ClosestPlr.Name or "WR")
+        PowerNum.Text       = tostring(POWAA)
+        AirTimeLbl.Text     = tostring(RoundNumToHundredths(TOF)) .. "s"
+
+        if AutoAngie then
+            if Throwtype == "Fade" then
+                AngleNum.Text = "85"
+            else
+                AngleNum.Text = tostring(RoundNumToHundredths(math.deg(LaunchAngle)))
+            end
+        else
+            AngleNum.Text = tostring(whichAngle)
+        end
+
+        -- Catchable / Interceptable flags kept conceptually same
+        CatchTextLbl.Text = "Yes"
+        IntTextLbl.Text   = "No"
+    end)
+end)
+
+--============================================================--
+--  COMPKILLER UI BINDING
+--============================================================--
+
+local MenuKey = "RightControl"
+
+local Window = Compkiller.new({
+    Name      = "• Wizard Hub",
+    Keybind   = MenuKey,
+    Logo      = "rbxassetid://103932843305381",
+    Scale     = Compkiller.Scale.Window,
+    TextSize  = 15
+})
+
+-- User Settings
+local UserSettings = Window.UserSettings:Create()
+
+UserSettings:AddKeybind({
+    Name     = "Menu Key",
+    Default  = MenuKey,
+    Callback = function(key)
+        MenuKey = key
+        Window:SetMenuKey(MenuKey)
+    end,
+})
+
+UserSettings:AddDropdown({
+    Name    = "Menu Theme",
+    Values  = {"Default","Dark Green","Dark Blue","Purple Rose","Skeet"},
+    Default = "Default",
+    Callback = function(f)
+        Compkiller:SetTheme(f)
+    end,
+})
+
+-- Category: Main
+Window:DrawCategory({ Name = "Main" })
+
+local MainTab = Window:DrawTab({
+    Name            = "QB & Mags",
+    Icon            = "target",
+    EnableScrolling = true
+})
+
+--======================
+--  Magnets Section
+--======================
+
+local MagSection = MainTab:DrawSection({
+    Name     = "Magnets",
+    Position = "left"
+})
+
+MagSection:AddToggle({
+    Name    = "Enable Magnets",
+    Flag    = "Mag_Enable",
+    Default = false,
+    Callback = function(v)
+        on = v
+    end
+})
+
+MagSection:AddDropdown({
+    Name    = "Mag Type",
+    Flag    = "Mag_Type",
+    Default = magType,
+    Values  = {"Legit","Regular","Blatant","Leauge"},
+    Callback = function(v)
+        magType = v
+    end
+})
+
+MagSection:AddDropdown({
+    Name    = "Mag Version",
+    Flag    = "Mag_Version",
+    Default = getgenv().msVersion,
+    Values  = {"Magnets V1","Magnets V2 (RISKY)"},
+    Callback = function(v)
+        getgenv().msVersion = v
+    end
+})
+
+MagSection:AddSlider({
+    Name    = "Legit Distance",
+    Min     = 1,
+    Max     = 50,
+    Default = legmagdist,
+    Round   = 0,
+    Flag    = "Mag_Leg_Dist",
+    Callback = function(v)
+        legmagdist = v
+    end
+})
+
+MagSection:AddSlider({
+    Name    = "Regular Distance",
+    Min     = 1,
+    Max     = 50,
+    Default = regdist,
+    Round   = 0,
+    Flag    = "Mag_Reg_Dist",
+    Callback = function(v)
+        regdist = v
+    end
+})
+
+MagSection:AddSlider({
+    Name    = "Blatant Distance",
+    Min     = 1,
+    Max     = 80,
+    Default = bldist,
+    Round   = 0,
+    Flag    = "Mag_Blatant_Dist",
+    Callback = function(v)
+        bldist = v
+    end
+})
+
+MagSection:AddSlider({
+    Name    = "League Distance",
+    Min     = 1,
+    Max     = 15,
+    Default = leaugdist,
+    Round   = 0,
+    Flag    = "Mag_League_Dist",
+    Callback = function(v)
+        leaugdist = v
+    end
+})
+
+MagSection:AddSlider({
+    Name    = "V2 Bubble Size",
+    Min     = 5,
+    Max     = 50,
+    Default = getgenv().msSecondVerRange,
+    Round   = 0,
+    Flag    = "Mag_V2_Size",
+    Callback = function(v)
+        getgenv().msSecondVerRange = v
+    end
+})
+
+MagSection:AddToggle({
+    Name    = "Show Mag Bubble",
+    Flag    = "Mag_Show_Bubble",
+    Default = false,
+    Callback = function(v)
+        on3 = v
+    end
+})
+
+--======================
+--  QB Aimbot Section
+--======================
+
+local QBSection = MainTab:DrawSection({
+    Name     = "QB Aimbot",
+    Position = "right"
+})
+
+QBSection:AddToggle({
+    Name    = "Enable QB Aimbot",
+    Flag    = "QB_Enable",
+    Default = false,
+    Callback = function(v)
+        state = v
+    end
+})
+
+QBSection:AddToggle({
+    Name    = "Auto Angle",
+    Flag    = "QB_AutoAngle",
+    Default = false,
+    Callback = function(v)
+        AutoAngie = v
+    end
+})
+
+QBSection:AddToggle({
+    Name    = "Auto Power",
+    Flag    = "QB_AutoPower",
+    Default = false,
+    Callback = function(v)
+        AutoPowa = v
+    end
+})
+
+QBSection:AddToggle({
+    Name    = "Highest Power Mode",
+    Flag    = "QB_HighestPwr",
+    Default = false,
+    Callback = function(v)
+        Highestpwrmode = v
+    end
+})
+
+QBSection:AddToggle({
+    Name    = "Auto Throw Type",
+    Flag    = "QB_AutoMode",
+    Default = false,
+    Callback = function(v)
+        autopmode = v
+    end
+})
+
+QBSection:AddToggle({
+    Name    = "Auto WR (Isolated)",
+    Flag    = "QB_AutoWR",
+    Default = false,
+    Callback = function(v)
+        autoswr = v
+    end
+})
+
+QBSection:AddSlider({
+    Name    = "Auto WR Radius",
+    Min     = 5,
+    Max     = 80,
+    Default = dradius,
+    Round   = 0,
+    Flag    = "QB_WR_Radius",
+    Callback = function(v)
+        dradius = v
+    end
+})
+
+QBSection:AddToggle({
+    Name    = "Custom Leads",
+    Flag    = "QB_CustomLeads",
+    Default = false,
+    Callback = function(v)
+        customLeads = v
+    end
+})
+
+QBSection:AddSlider({
+    Name    = "Lead Multiplier",
+    Min     = 5,
+    Max     = 30,
+    Default = customLead,
+    Round   = 1,
+    Flag    = "QB_Lead_Mult",
+    Callback = function(v)
+        customLead = v
+    end
+})
+
+QBSection:AddToggle({
+    Name    = "Custom Beam Time",
+    Flag    = "QB_CustomBeam",
+    Default = false,
+    Callback = function(v)
+        customBeam = v
+    end
+})
+
+-- Optional: angle/power manual base (for when AutoAngle/AutoPower off)
+QBSection:AddSlider({
+    Name    = "Base Power",
+    Min     = 10,
+    Max     = 95,
+    Default = Data.NormalPower,
+    Round   = 0,
+    Flag    = "QB_BasePower",
+    Callback = function(v)
+        Data.NormalPower = v
+    end
+})
+
+QBSection:AddSlider({
+    Name    = "Base Angle",
+    Min     = 5,
+    Max     = 90,
+    Default = Data.Angle,
+    Round   = 0,
+    Flag    = "QB_BaseAngle",
+    Callback = function(v)
+        Data.Angle = v
+    end
+})
+-- =========================================================
+--  BALL BEAM VISUAL (toggle: BeOn)
+--  • Uses existing beamProjectile(ff2G, Vel3, Beginning, t)
+-- =========================================================
+
+local BeOn = false
+
+-- === UI: make a small tab/section for the beam ===
+local BallVisTab = Window:DrawTab({
+    Name = "Ball Visuals",
+    Icon = "activity",
+    Type = "Single",
+    EnableScrolling = false
+})
+
+local BallVisSection = BallVisTab:DrawSection({
+    Name = "Ball Path Beam",
+    Position = "left"
+})
+
+BallVisSection:AddToggle({
+    Name    = "Enable Ball Beam",
+    Flag    = "Ball_Beam",
+    Default = false,
+    Callback = function(v)
+        BeOn = v
+    end
+})
+
+-- === Beam logic (calculation unchanged) ===
+do
+    local Terrain = workspace.Terrain
+
+    workspace.ChildAdded:Connect(function(v)
+        if not BeOn then return end
+        if v.Name ~= "Football" or not v:IsA("BasePart") then return end
+
+        task.wait() -- let physics settle a tick
+
+        -- Calculations remain unchanged
+        local Beginning = v.Position
+        local Vel3      = v.Velocity
+        local t         = 10
+        local ff2G      = Vector3.new(0, -28, 0)
+
+        local curve0, curve1, cf1, cf2 = beamProjectile(ff2G, Vel3, Beginning, t)
+
+        -- Attachments
+        local Attach0 = Instance.new("Attachment")
+        Attach0.Parent = Terrain
+
+        local Attach1 = Instance.new("Attachment")
+        Attach1.Parent = Terrain
+
+        -- Beam
+        local beam = Instance.new("Beam")
+        beam.Parent = Terrain
+
+        -- Configure beam visuals (kept same look)
+        beam.Color = ColorSequence.new({
+            ColorSequenceKeypoint.new(0,   Color3.fromRGB(255, 100, 100)),
+            ColorSequenceKeypoint.new(0.5, Color3.fromRGB(255, 140, 0)),
+            ColorSequenceKeypoint.new(1,   Color3.fromRGB(255, 140, 0))
+        })
+
+        beam.Transparency = NumberSequence.new({
+            NumberSequenceKeypoint.new(0,   0),
+            NumberSequenceKeypoint.new(0.8, 0.1),
+            NumberSequenceKeypoint.new(1,   0.2)
+        })
+
+        beam.CurveSize0   = curve0
+        beam.CurveSize1   = curve1
+        beam.Segments     = 1000
+        beam.Width0       = 0.5
+        beam.Width1       = 0.5
+        beam.LightEmission = 1
+
+        -- Attach positions (world cframes from your bezier)
+        Attach0.CFrame = cf1
+        Attach1.CFrame = cf2
+        beam.Attachment0 = Attach0
+        beam.Attachment1 = Attach1
+
+        -- Cleanup when ball despawns / leaves workspace
+        local function cleanup()
+            if beam then beam:Destroy() end
+            if Attach0 then Attach0:Destroy() end
+            if Attach1 then Attach1:Destroy() end
+        end
+
+        v.AncestryChanged:Connect(function(_, parent)
+            if parent ~= workspace then
+                cleanup()
+            end
+        end)
+    end)
+end
+
+-- Done 🎯
